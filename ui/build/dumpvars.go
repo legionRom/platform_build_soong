@@ -86,14 +86,16 @@ func dumpMakeVars(ctx Context, config Config, goals, vars []string, write_soong_
 
 // Variables to print out in the top banner
 var BannerVars = []string{
-	"XTENDED_VERSION",
+	"LEAN_VERSION",
 	"TARGET_BUILD_VARIANT",
 	"TARGET_ARCH",
 	"TARGET_ARCH_VARIANT",
 	"TARGET_CPU_VARIANT",
 	"BUILD_ID",
 	"PRODUCT_SOONG_NAMESPACES",
-	}
+	"TARGET_USE_SDCLANG",
+}
+
 
 func Banner(make_vars map[string]string) string {
 	b := &bytes.Buffer{}
