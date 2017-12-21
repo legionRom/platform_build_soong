@@ -104,6 +104,7 @@ func installClean(ctx Context, config Config, what int) {
 		outDir("soong/.bootstrap"),
 		productOut("*.img"),
 		productOut("*.zip"),
+		productOut("*.zip.md5sum"),
 		productOut("android-info.txt"),
 		productOut("build_fingerprint.txt"),
 		productOut("build_thumbprint.txt"),
