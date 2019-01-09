@@ -60,7 +60,7 @@ function soong_build_go
       SRCDIR=${TOP} \
       BLUEPRINTDIR=${TOP}/build/blueprint \
       EXTRA_ARGS="-pkg-path android/soong=${TOP}/build/soong
-                  -pkg-path lean/soong=${TOP}/vendor/lean/build/soong" \
+                  -pkg-path beast/soong=${TOP}/vendor/beast/build/soong" \
       build_go $@
 }
 
