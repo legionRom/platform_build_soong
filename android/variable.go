@@ -116,6 +116,16 @@ type variableProperties struct {
 			Static_libs  []string
 			Srcs         []string
 		}
+		
+		Device_support_hwfde struct {
+			Cflags []string
+			Header_libs  []string
+			Shared_libs  []string
+		}
+
+		Device_support_hwfde_perf struct {
+			Cflags []string
+		}
 
 		// include Beast variables
 		Beast android.Product_variables
@@ -194,6 +204,8 @@ type productVariables struct {
 	Arc                        *bool `json:",omitempty"`
 	MinimizeJavaDebugInfo      *bool `json:",omitempty"`
 	Libart_img_base            *string `json:",omitempty"`
+	Device_support_hwfde       *bool `json:",omitempty"`
+	Device_support_hwfde_perf  *bool `json:",omitempty"`
 
 	IntegerOverflowExcludePaths *[]string `json:",omitempty"`
 
