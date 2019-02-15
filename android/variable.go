@@ -20,7 +20,7 @@ import (
 	"runtime"
 	"strings"
 
-	"beast/soong/android"
+	"legion/soong/android"
 
 	"github.com/google/blueprint/proptools"
 )
@@ -127,8 +127,8 @@ type variableProperties struct {
 			Cflags []string
 		}
 
-		// include Beast variables
-		Beast android.Product_variables
+		// include Legion variables
+		Legion android.Product_variables
 	} `android:"arch_variant"`
 }
 
@@ -249,8 +249,8 @@ type productVariables struct {
 
 	VendorVars map[string]map[string]string `json:",omitempty"`
 
-	// include Beast variables
-	Beast android.ProductVariables
+	// include Legion variables
+	Legion android.ProductVariables
 }
 
 func boolPtr(v bool) *bool {
