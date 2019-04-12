@@ -1328,8 +1328,8 @@ func maybeRelErr(basePath string, targetPath string) (string, bool, error) {
 	rel, err := filepath.Rel(basePath, targetPath)
 	if err != nil {
 		return "", false, err
-	} else if strings.HasPrefix(rel, "/") {
-           	return "", false, nil
+	} else if rel == ".." || strings.HasPrefix(rel, "../") || strings.HasPrefix(rel, "/") {
+		return "", false, nil
 	}
 	return rel, true, nil
 }

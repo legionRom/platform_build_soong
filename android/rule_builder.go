@@ -342,6 +342,10 @@ func (r *RuleBuilder) Build(pctx PackageContext, ctx BuilderContext, name string
 			sboxOutputs[i] = "__SBOX_OUT_DIR__/" + Rel(ctx, r.sboxOutDir.String(), output.String())
 		}
 
+		if depFile != nil {
+			sboxOutputs = append(sboxOutputs, "__SBOX_OUT_DIR__/"+Rel(ctx, r.sboxOutDir.String(), depFile.String()))
+		}
+
 		commandString = proptools.ShellEscape(commandString)
 		if !strings.HasPrefix(commandString, `'`) {
 			commandString = `'` + commandString + `'`
@@ -351,13 +355,8 @@ func (r *RuleBuilder) Build(pctx PackageContext, ctx BuilderContext, name string
 		sboxCmd.Tool(ctx.Config().HostToolPath(ctx, "sbox")).
 			Flag("-c").Text(commandString).
 			Flag("--sandbox-path").Text(shared.TempDirForOutDir(PathForOutput(ctx).String())).
-			Flag("--output-root").Text(r.sboxOutDir.String())
-
-		if depFile != nil {
-			sboxCmd.Flag("--depfile-out").Text(depFile.String())
-		}
-
-		sboxCmd.Flags(sboxOutputs)
+			Flag("--output-root").Text(r.sboxOutDir.String()).
+			Flags(sboxOutputs)
 
 		commandString = string(sboxCmd.buf)
 		tools = append(tools, sboxCmd.tools...)
