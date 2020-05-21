@@ -37,18 +37,7 @@ import (
 	"android/soong/zip"
 )
 
-// We default to number of cpus / 4, which seems to be the sweet spot for my
-// system. I suspect this is mostly due to memory or disk bandwidth though, and
-// may depend on the size ofthe source tree, so this probably isn't a great
-// default.
-func detectNumJobs() int {
-	if runtime.NumCPU() < 4 {
-		return 1
-	}
-	return runtime.NumCPU() / 4
-}
-
-var numJobs = flag.Int("j", detectNumJobs(), "number of parallel kati jobs")
+var numJobs = flag.Int("j", 0, "number of parallel jobs [0=autodetect]")
 
 var keepArtifacts = flag.Bool("keep", false, "keep archives of artifacts")
 var incremental = flag.Bool("incremental", false, "run in incremental mode (saving intermediates)")
@@ -156,10 +145,12 @@ type mpContext struct {
 }
 
 func main() {
-	writer := terminal.NewWriter(terminal.StdioImpl{})
-	defer writer.Finish()
+	stdio := terminal.StdioImpl{}
 
-	log := logger.New(writer)
+	output := terminal.NewStatusOutput(stdio.Stdout(), "", false,
+		build.OsEnvironment().IsEnvTrue("ANDROID_QUIET_BUILD"))
+
+	log := logger.New(output)
 	defer log.Cleanup()
 
 	flag.Parse()
@@ -172,8 +163,7 @@ func main() {
 
 	stat := &status.Status{}
 	defer stat.Finish()
-	stat.AddOutput(terminal.NewStatusOutput(writer, "",
-		build.OsEnvironment().IsEnvTrue("ANDROID_QUIET_BUILD")))
+	stat.AddOutput(output)
 
 	var failures failureCount
 	stat.AddOutput(&failures)
@@ -188,7 +178,7 @@ func main() {
 		Context: ctx,
 		Logger:  log,
 		Tracer:  trace,
-		Writer:  writer,
+		Writer:  output,
 		Status:  stat,
 	}}
 
@@ -228,6 +218,21 @@ func main() {
 		log.SetOutput(filepath.Join(config.OutDir(), "soong.log"))
 		trace.SetOutput(filepath.Join(config.OutDir(), "build.trace"))
 	}
+
+	var jobs = *numJobs
+	if jobs < 1 {
+		jobs = runtime.NumCPU() / 4
+
+		ramGb := int(config.TotalRAM() / 1024 / 1024 / 1024)
+		if ramJobs := ramGb / 20; ramGb > 0 && jobs > ramJobs {
+			jobs = ramJobs
+		}
+
+		if jobs < 1 {
+			jobs = 1
+		}
+	}
+	log.Verbosef("Using %d parallel jobs", jobs)
 
 	setMaxFiles(log)
 
@@ -303,7 +308,7 @@ func main() {
 	}()
 
 	var wg sync.WaitGroup
-	for i := 0; i < *numJobs; i++ {
+	for i := 0; i < jobs; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -341,7 +346,7 @@ func main() {
 	} else if failures > 1 {
 		log.Fatalf("%d failures", failures)
 	} else {
-		writer.Print("Success")
+		fmt.Fprintln(output, "Success")
 	}
 }
 
@@ -386,11 +391,11 @@ func buildProduct(mpctx *mpContext, product string) {
 		Context: mpctx.Context,
 		Logger:  log,
 		Tracer:  mpctx.Tracer,
-		Writer:  terminal.NewWriter(terminal.NewCustomStdio(nil, f, f)),
+		Writer:  f,
 		Thread:  mpctx.Tracer.NewThread(product),
 		Status:  &status.Status{},
 	}}
-	ctx.Status.AddOutput(terminal.NewStatusOutput(ctx.Writer, "",
+	ctx.Status.AddOutput(terminal.NewStatusOutput(ctx.Writer, "", false,
 		build.OsEnvironment().IsEnvTrue("ANDROID_QUIET_BUILD")))
 
 	config := build.NewConfig(ctx, flag.Args()...)
@@ -466,3 +471,8 @@ func (f *failureCount) Message(level status.MsgLevel, message string) {
 }
 
 func (f *failureCount) Flush() {}
+
+func (f *failureCount) Write(p []byte) (int, error) {
+	// discard writes
+	return len(p), nil
+}

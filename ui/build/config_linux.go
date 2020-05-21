@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2019 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,30 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-bootstrap_go_package {
-    name: "soong-ui-terminal",
-    pkgPath: "android/soong/ui/terminal",
-    deps: ["soong-ui-status"],
-    srcs: [
-        "dumb_status.go",
-        "format.go",
-        "smart_status.go",
-        "status.go",
-        "stdio.go",
-        "util.go",
-    ],
-    testSrcs: [
-        "status_test.go",
-        "util_test.go",
-    ],
-    darwin: {
-        srcs: [
-            "util_darwin.go",
-        ],
-    },
-    linux: {
-        srcs: [
-            "util_linux.go",
-        ],
-    },
+package build
+
+import "syscall"
+
+func detectTotalRAM(ctx Context) uint64 {
+	var info syscall.Sysinfo_t
+	err := syscall.Sysinfo(&info)
+	if err != nil {
+		ctx.Printf("Failed to get system memory size: %s")
+		return 0
+	}
+	memBytes := uint64(info.Totalram) * uint64(info.Unit)
+	return memBytes
 }

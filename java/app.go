@@ -119,6 +119,10 @@ type AndroidApp struct {
 	// the install APK name is normally the same as the module name, but can be overridden with PRODUCT_PACKAGE_NAME_OVERRIDES.
 	installApkName string
 
+	installDir android.OutputPath
+
+	onDeviceDir string
+
 	additionalAaptFlags []string
 }
 
@@ -195,11 +199,6 @@ func (a *AndroidApp) shouldUncompressDex(ctx android.ModuleContext) bool {
 
 	if ctx.Config().UnbundledBuild() {
 		return false
-	}
-
-	// Uncompress dex in APKs of privileged apps
-	if ctx.Config().UncompressPrivAppDex() && Bool(a.appProperties.Privileged) {
-		return true
 	}
 
 	return shouldUncompressDex(ctx, &a.dexpreopter)
@@ -339,7 +338,7 @@ func processMainCert(m android.ModuleBase, certPropValue string, certificates []
 	return certificates
 }
 
-func (a *AndroidApp) noticeBuildActions(ctx android.ModuleContext, installDir android.OutputPath) android.OptionalPath {
+func (a *AndroidApp) noticeBuildActions(ctx android.ModuleContext) android.OptionalPath {
 	if !Bool(a.appProperties.Embed_notices) && !ctx.Config().IsEnvTrue("ALWAYS_EMBED_NOTICES") {
 		return android.OptionalPath{}
 	}
@@ -386,7 +385,7 @@ func (a *AndroidApp) noticeBuildActions(ctx android.ModuleContext, installDir an
 	sort.Slice(noticePaths, func(i, j int) bool {
 		return noticePaths[i].String() < noticePaths[j].String()
 	})
-	noticeFile := android.BuildNoticeOutput(ctx, installDir, a.installApkName+".apk", noticePaths)
+	noticeFile := android.BuildNoticeOutput(ctx, a.installDir, a.installApkName+".apk", noticePaths)
 
 	return android.OptionalPathForPath(noticeFile)
 }
@@ -395,17 +394,17 @@ func (a *AndroidApp) generateAndroidBuildActions(ctx android.ModuleContext) {
 	// Check if the install APK name needs to be overridden.
 	a.installApkName = ctx.DeviceConfig().OverridePackageNameFor(a.Name())
 
-	var installDir android.OutputPath
 	if ctx.ModuleName() == "framework-res" {
 		// framework-res.apk is installed as system/framework/framework-res.apk
-		installDir = android.PathForModuleInstall(ctx, "framework")
+		a.installDir = android.PathForModuleInstall(ctx, "framework")
 	} else if Bool(a.appProperties.Privileged) {
-		installDir = android.PathForModuleInstall(ctx, "priv-app", a.installApkName)
+		a.installDir = android.PathForModuleInstall(ctx, "priv-app", a.installApkName)
 	} else {
-		installDir = android.PathForModuleInstall(ctx, "app", a.installApkName)
+		a.installDir = android.PathForModuleInstall(ctx, "app", a.installApkName)
 	}
+	a.onDeviceDir = android.InstallPathToOnDevicePath(ctx, a.installDir)
 
-	a.aapt.noticeFile = a.noticeBuildActions(ctx, installDir)
+	a.aapt.noticeFile = a.noticeBuildActions(ctx)
 
 	// Process all building blocks, from AAPT to certificates.
 	a.aaptBuildActions(ctx)
@@ -443,9 +442,9 @@ func (a *AndroidApp) generateAndroidBuildActions(ctx android.ModuleContext) {
 	a.bundleFile = bundleFile
 
 	// Install the app package.
-	ctx.InstallFile(installDir, a.installApkName+".apk", a.outputFile)
+	ctx.InstallFile(a.installDir, a.installApkName+".apk", a.outputFile)
 	for _, split := range a.aapt.splits {
-		ctx.InstallFile(installDir, a.installApkName+"_"+split.suffix+".apk", split.path)
+		ctx.InstallFile(a.installDir, a.installApkName+"_"+split.suffix+".apk", split.path)
 	}
 }
 
@@ -535,6 +534,10 @@ type AndroidTest struct {
 
 	testConfig android.Path
 	data       android.Paths
+}
+
+func (a *AndroidTest) InstallInTestcases() bool {
+	return true
 }
 
 func (a *AndroidTest) GenerateAndroidBuildActions(ctx android.ModuleContext) {
