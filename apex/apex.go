@@ -86,7 +86,8 @@ var (
 		Command: `${zip2zip} -i $in -o $out ` +
 			`apex_payload.img:apex/${abi}.img ` +
 			`apex_manifest.json:root/apex_manifest.json ` +
-			`AndroidManifest.xml:manifest/AndroidManifest.xml`,
+			`AndroidManifest.xml:manifest/AndroidManifest.xml ` +
+			`assets/NOTICE.html.gz:assets/NOTICE.html.gz`,
 		CommandDeps: []string{"${zip2zip}"},
 		Description: "app bundle",
 	}, "abi")
@@ -266,6 +267,10 @@ type apexBundleProperties struct {
 
 	// List of sanitizer names that this APEX is enabled for
 	SanitizerNames []string `blueprint:"mutated"`
+
+	PreventInstall bool `blueprint:"mutated"`
+
+	HideFromMake bool `blueprint:"mutated"`
 }
 
 type apexTargetBundleProperties struct {
@@ -511,6 +516,17 @@ func (a *apexBundle) DepsMutator(ctx android.BottomUpMutatorContext) {
 					a.properties.Multilib.Prefer32.Binaries, target.String(),
 					a.getImageVariation(config))
 			}
+
+			if strings.HasPrefix(ctx.ModuleName(), "com.android.runtime") && target.Os.Class == android.Device {
+				for _, sanitizer := range ctx.Config().SanitizeDevice() {
+					if sanitizer == "hwaddress" {
+						addDependenciesForNativeModules(ctx,
+							[]string{"libclang_rt.hwasan-aarch64-android"},
+							nil, target.String(), a.getImageVariation(config))
+						break
+					}
+				}
+			}
 		}
 
 	}
@@ -548,7 +564,7 @@ func (a *apexBundle) Srcs() android.Paths {
 }
 
 func (a *apexBundle) installable() bool {
-	return a.properties.Installable == nil || proptools.Bool(a.properties.Installable)
+	return !a.properties.PreventInstall && (a.properties.Installable == nil || proptools.Bool(a.properties.Installable))
 }
 
 func (a *apexBundle) getImageVariation(config android.DeviceConfig) string {
@@ -581,6 +597,18 @@ func (a *apexBundle) IsSanitizerEnabled(ctx android.BaseModuleContext, sanitizer
 		}
 	}
 	return android.InList(sanitizerName, globalSanitizerNames)
+}
+
+func (a *apexBundle) IsNativeCoverageNeeded(ctx android.BaseContext) bool {
+	return ctx.Device() && ctx.DeviceConfig().NativeCoverageEnabled()
+}
+
+func (a *apexBundle) PreventInstall() {
+	a.properties.PreventInstall = true
+}
+
+func (a *apexBundle) HideFromMake() {
+	a.properties.HideFromMake = true
 }
 
 func getCopyManifestForNativeLibrary(cc *cc.Module, handleSpecialLibs bool) (fileToCopy android.Path, dirInApex string) {
@@ -1082,6 +1110,11 @@ func (a *apexBundle) buildFlattenedApex(ctx android.ModuleContext) {
 }
 
 func (a *apexBundle) AndroidMk() android.AndroidMkData {
+	if a.properties.HideFromMake {
+		return android.AndroidMkData{
+			Disabled: true,
+		}
+	}
 	writers := []android.AndroidMkData{}
 	if a.apexTypes.image() {
 		writers = append(writers, a.androidMkForType(imageApex))
@@ -1171,8 +1204,13 @@ func (a *apexBundle) androidMkForFiles(w io.Writer, name, moduleDir string, apex
 			fmt.Fprintln(w, "include $(BUILD_SYSTEM)/soong_java_prebuilt.mk")
 		} else if fi.class == nativeSharedLib || fi.class == nativeExecutable {
 			fmt.Fprintln(w, "LOCAL_MODULE_STEM :=", fi.builtFile.Base())
-			if cc, ok := fi.module.(*cc.Module); ok && cc.UnstrippedOutputFile() != nil {
-				fmt.Fprintln(w, "LOCAL_SOONG_UNSTRIPPED_BINARY :=", cc.UnstrippedOutputFile().String())
+			if cc, ok := fi.module.(*cc.Module); ok {
+				if cc.UnstrippedOutputFile() != nil {
+					fmt.Fprintln(w, "LOCAL_SOONG_UNSTRIPPED_BINARY :=", cc.UnstrippedOutputFile().String())
+				}
+				if cc.CoverageOutputFile().Valid() {
+					fmt.Fprintln(w, "LOCAL_PREBUILT_COVERAGE_ARCHIVE :=", cc.CoverageOutputFile().String())
+				}
 			}
 			fmt.Fprintln(w, "include $(BUILD_SYSTEM)/soong_cc_prebuilt.mk")
 		} else {
@@ -1341,6 +1379,10 @@ func (p *Prebuilt) DepsMutator(ctx android.BottomUpMutatorContext) {
 	// Force disable the prebuilts when we are doing unbundled build. We do unbundled build
 	// to build the prebuilts themselves.
 	forceDisable = forceDisable || ctx.Config().UnbundledBuild()
+
+	// Force disable the prebuilts when coverage is enabled.
+	forceDisable = forceDisable || ctx.DeviceConfig().NativeCoverageEnabled()
+	forceDisable = forceDisable || ctx.Config().IsEnvTrue("EMMA_INSTRUMENT")
 
 	// b/137216042 don't use prebuilts when address sanitizer is on
 	forceDisable = forceDisable || android.InList("address", ctx.Config().SanitizeDevice()) ||

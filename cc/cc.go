@@ -51,6 +51,8 @@ func init() {
 		ctx.TopDown("hwasan_deps", sanitizerDepsMutator(hwasan))
 		ctx.BottomUp("hwasan", sanitizerMutator(hwasan)).Parallel()
 
+		// cfi mutator shouldn't run before sanitizers that return true for
+		// incompatibleWithCfi()
 		ctx.TopDown("cfi_deps", sanitizerDepsMutator(cfi))
 		ctx.BottomUp("cfi", sanitizerMutator(cfi)).Parallel()
 
@@ -239,6 +241,7 @@ type VendorProperties struct {
 type ModuleContextIntf interface {
 	static() bool
 	staticBinary() bool
+	header() bool
 	toolchain() config.Toolchain
 	useSdk() bool
 	sdkVersion() string
@@ -311,6 +314,7 @@ type linker interface {
 	unstrippedOutputFilePath() android.Path
 
 	nativeCoverage() bool
+	coverageOutputFilePath() android.OptionalPath
 }
 
 type installer interface {
@@ -357,6 +361,7 @@ var (
 	ndkLateStubDepTag     = dependencyTag{name: "ndk late stub", library: true}
 	vndkExtDepTag         = dependencyTag{name: "vndk extends", library: true}
 	runtimeDepTag         = dependencyTag{name: "runtime lib"}
+	coverageDepTag        = dependencyTag{name: "coverage"}
 )
 
 // Module contains the properties and members used by all C/C++ module types, and implements
@@ -417,6 +422,13 @@ func (c *Module) UnstrippedOutputFile() android.Path {
 		return c.linker.unstrippedOutputFilePath()
 	}
 	return nil
+}
+
+func (c *Module) CoverageOutputFile() android.OptionalPath {
+	if c.linker != nil {
+		return c.linker.coverageOutputFilePath()
+	}
+	return android.OptionalPath{}
 }
 
 func (c *Module) RelativeInstallPath() string {
@@ -596,6 +608,9 @@ func (c *Module) HasStubsVariants() bool {
 	if library, ok := c.linker.(*libraryDecorator); ok {
 		return len(library.Properties.Stubs.Versions) > 0
 	}
+	if library, ok := c.linker.(*prebuiltLibraryLinker); ok {
+		return len(library.Properties.Stubs.Versions) > 0
+	}
 	return false
 }
 
@@ -613,6 +628,13 @@ func isBionic(name string) bool {
 		return true
 	}
 	return false
+}
+
+func installToBootstrap(name string, config android.Config) bool {
+	if name == "libclang_rt.hwasan-aarch64-android" {
+		return inList("hwaddress", config.SanitizeDevice())
+	}
+	return isBionic(name)
 }
 
 type baseModuleContext struct {
@@ -650,6 +672,10 @@ func (ctx *moduleContextImpl) static() bool {
 
 func (ctx *moduleContextImpl) staticBinary() bool {
 	return ctx.mod.staticBinary()
+}
+
+func (ctx *moduleContextImpl) header() bool {
+	return ctx.mod.header()
 }
 
 func (ctx *moduleContextImpl) useSdk() bool {
@@ -938,7 +964,7 @@ func (c *Module) GenerateAndroidBuildActions(actx android.ModuleContext) {
 		flags = c.sanitize.flags(ctx, flags)
 	}
 	if c.coverage != nil {
-		flags = c.coverage.flags(ctx, flags)
+		flags, deps = c.coverage.flags(ctx, flags, deps)
 	}
 	if c.lto != nil {
 		flags = c.lto.flags(ctx, flags)
@@ -1911,6 +1937,15 @@ func (c *Module) staticBinary() bool {
 		staticBinary() bool
 	}); ok {
 		return static.staticBinary()
+	}
+	return false
+}
+
+func (c *Module) header() bool {
+	if h, ok := c.linker.(interface {
+		header() bool
+	}); ok {
+		return h.header()
 	}
 	return false
 }

@@ -629,7 +629,7 @@ func (library *libraryDecorator) linkStatic(ctx ModuleContext,
 
 	TransformObjToStaticLib(ctx, library.objects.objFiles, builderFlags, outputFile, objs.tidyFiles)
 
-	library.coverageOutputFile = TransformCoverageFilesToLib(ctx, library.objects, builderFlags,
+	library.coverageOutputFile = TransformCoverageFilesToZip(ctx, library.objects,
 		ctx.ModuleName()+library.MutatedProperties.VariantName)
 
 	library.wholeStaticMissingDeps = ctx.GetMissingDependencies()
@@ -741,7 +741,7 @@ func (library *libraryDecorator) linkShared(ctx ModuleContext,
 	objs.sAbiDumpFiles = append(objs.sAbiDumpFiles, deps.StaticLibObjs.sAbiDumpFiles...)
 	objs.sAbiDumpFiles = append(objs.sAbiDumpFiles, deps.WholeStaticLibObjs.sAbiDumpFiles...)
 
-	library.coverageOutputFile = TransformCoverageFilesToLib(ctx, objs, builderFlags, library.getLibName(ctx))
+	library.coverageOutputFile = TransformCoverageFilesToZip(ctx, objs, library.getLibName(ctx))
 	library.linkSAbiDumpFiles(ctx, objs, fileName, ret)
 
 	return ret
@@ -756,6 +756,10 @@ func (library *libraryDecorator) nativeCoverage() bool {
 		return false
 	}
 	return true
+}
+
+func (library *libraryDecorator) coverageOutputFilePath() android.OptionalPath {
+	return library.coverageOutputFile
 }
 
 func getRefAbiDumpFile(ctx ModuleContext, vndkVersion, fileName string) android.Path {
@@ -934,12 +938,12 @@ func (library *libraryDecorator) install(ctx ModuleContext, file android.Path) {
 					library.baseInstaller.subDir += "-" + vndkVersion
 				}
 			}
-		} else if len(library.Properties.Stubs.Versions) > 0 && android.DirectlyInAnyApex(ctx, ctx.ModuleName()) {
+		} else if len(library.Properties.Stubs.Versions) > 0 {
 			// Bionic libraries (e.g. libc.so) is installed to the bootstrap subdirectory.
 			// The original path becomes a symlink to the corresponding file in the
 			// runtime APEX.
-			if isBionic(ctx.baseModuleName()) && !library.buildStubs() && ctx.Arch().Native && !ctx.inRecovery() {
-				if ctx.Device() {
+			if installToBootstrap(ctx.baseModuleName(), ctx.Config()) && !library.buildStubs() && ctx.Arch().Native && !ctx.inRecovery() {
+				if ctx.Device() && isBionic(ctx.baseModuleName()) {
 					library.installSymlinkToRuntimeApex(ctx, file)
 				}
 				library.baseInstaller.subDir = "bootstrap"

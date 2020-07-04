@@ -388,7 +388,7 @@ func (binary *binaryDecorator) link(ctx ModuleContext,
 
 	objs.coverageFiles = append(objs.coverageFiles, deps.StaticLibObjs.coverageFiles...)
 	objs.coverageFiles = append(objs.coverageFiles, deps.WholeStaticLibObjs.coverageFiles...)
-	binary.coverageOutputFile = TransformCoverageFilesToLib(ctx, objs, builderFlags, binary.getStem(ctx))
+	binary.coverageOutputFile = TransformCoverageFilesToZip(ctx, objs, binary.getStem(ctx))
 
 	// Need to determine symlinks early since some targets (ie APEX) need this
 	// information but will not call 'install'
@@ -421,6 +421,10 @@ func (binary *binaryDecorator) nativeCoverage() bool {
 	return true
 }
 
+func (binary *binaryDecorator) coverageOutputFilePath() android.OptionalPath {
+	return binary.coverageOutputFile
+}
+
 // /system/bin/linker -> /apex/com.android.runtime/bin/linker
 func (binary *binaryDecorator) installSymlinkToRuntimeApex(ctx ModuleContext, file android.Path) {
 	dir := binary.baseInstaller.installDir(ctx)
@@ -440,8 +444,8 @@ func (binary *binaryDecorator) install(ctx ModuleContext, file android.Path) {
 	// Bionic binaries (e.g. linker) is installed to the bootstrap subdirectory.
 	// The original path becomes a symlink to the corresponding file in the
 	// runtime APEX.
-	if isBionic(ctx.baseModuleName()) && ctx.Arch().Native && ctx.apexName() == "" && !ctx.inRecovery() {
-		if ctx.Device() {
+	if installToBootstrap(ctx.baseModuleName(), ctx.Config()) && ctx.Arch().Native && ctx.apexName() == "" && !ctx.inRecovery() {
+		if ctx.Device() && isBionic(ctx.baseModuleName()) {
 			binary.installSymlinkToRuntimeApex(ctx, file)
 		}
 		binary.baseInstaller.subDir = "bootstrap"
